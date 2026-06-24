@@ -195,7 +195,7 @@ class FeishuClient:
         return user_list[0].user_id  # 当 user_id_type=open_id 时，user_id 字段的值就是 open_id
 
     def get_user_department(self, open_id):
-        """获取用户主部门 department_id"""
+        """获取用户主部门 department_id 和姓名，返回 (department_id, name)"""
         request = GetUserRequest.builder() \
             .user_id(open_id) \
             .user_id_type("open_id") \
@@ -204,11 +204,12 @@ class FeishuClient:
         response = self.client.contact.v3.user.get(request)
         if not response.success():
             print(f"get user failed: code={response.code}, msg={response.msg}")
-            return None
-        dept_ids = response.data.user.department_ids
-        if not dept_ids:
-            return None
-        return dept_ids[0]  # 返回第一个部门
+            return None, None
+        user = response.data.user
+        dept_ids = user.department_ids
+        dept_id = dept_ids[0] if dept_ids else ""
+        name = getattr(user, "name", "") or ""
+        return dept_id, name
 
     def upload_file_to_feishu(self, file_path):
         """上传文件到飞书审批系统，返回 file_code"""
@@ -1193,11 +1194,11 @@ def main():
                 if not open_id:
                     st.error("手机号未找到对应用户")
                     return
-                department_id = client.get_user_department(open_id)
-                st.session_state.logged_in = True
-                st.session_state.open_id = open_id
-                st.session_state.department_id = department_id or ""
-                st.session_state.user_name = mobile
+            department_id, user_name = client.get_user_department(open_id)
+            st.session_state.logged_in = True
+            st.session_state.open_id = open_id
+            st.session_state.department_id = department_id or ""
+            st.session_state.user_name = user_name or mobile
                 st.success(f"登录成功：{mobile} ({open_id})")
                 st.rerun()
             except Exception as e:
