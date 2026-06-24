@@ -2,8 +2,10 @@ import os
 import re
 import json
 import time
+import logging
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 import uuid
 
 import requests
@@ -17,7 +19,31 @@ from lark_oapi.api.contact.v3 import GetUserRequest
 from lark_oapi.api.approval.v4 import CreateInstanceRequest, InstanceCreate
 from requests_toolbelt import MultipartEncoder
 
-# Load environment variables
+# ── Logging Setup ───────────────────────────────────────────────
+LOG_DIR = Path(__file__).parent / "log"
+LOG_DIR.mkdir(exist_ok=True)
+
+logger = logging.getLogger("submit_approval_feishu")
+logger.setLevel(logging.DEBUG)
+
+# File handler: all debug messages go to a daily rotating file
+log_file = LOG_DIR / f"app_{datetime.now().strftime('%Y%m%d')}.log"
+fh = logging.FileHandler(log_file, encoding="utf-8")
+fh.setLevel(logging.DEBUG)
+
+# Console handler: info and above
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+formatter = logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+)
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+logger.addHandler(fh)
+logger.addHandler(ch)
+
+# ── Environment ─────────────────────────────────────────────────
 load_dotenv()
 
 DEFAULT_CONFIG = {
@@ -301,11 +327,13 @@ class FeishuClient:
             .open_id(open_id) \
             .department_id(department_id) \
             .form(form_json) \
-            .locale("zh-CN") \
             .uuid(str(uuid.uuid4())) \
             .build()
 
-        request = CreateInstanceRequest.builder().request_body(body).build()
+        request = CreateInstanceRequest.builder() \
+            .locale("zh-CN") \
+            .request_body(body) \
+            .build()
         response = self.client.approval.v4.instance.create(request)
 
         if not response.success():
@@ -1492,6 +1520,11 @@ def _map_feishu_controls_to_config(controls):
         if ctrl_type == "fieldList":
             table_ctrl = ctrl
 
+    logger.debug("Available Feishu widget names: %s", list(api_by_name.keys()))
+    if table_ctrl:
+        logger.debug("fieldList raw keys: %s", list(table_ctrl.keys()))
+        logger.debug("fieldList JSON: %s", json.dumps(table_ctrl, ensure_ascii=False)[:2000])
+
     unmatched = []
 
     for key, cfg in cfg_controls.items():
@@ -1558,22 +1591,56 @@ def _extract_fieldlist_children(table_ctrl):
     if not isinstance(table_ctrl, dict):
         return []
 
+    ctrl_id = table_ctrl.get("id", "?")
+    logger.debug("Extracting fieldList children for control id=%s", ctrl_id)
+
+    # Try multiple known nesting paths
+    candidates: list[dict] = []
+
+    # Path 1: widget.children (most common)
     widget = table_ctrl.get("widget")
     if isinstance(widget, dict):
-        children = widget.get("children")
-        if isinstance(children, list):
-            return children
+        for key in ("children", "sub_components", "subControls", "sub_controls"):
+            children = widget.get(key)
+            if isinstance(children, list):
+                candidates = children
+                logger.debug("  Found %d children via widget.%s", len(candidates), key)
+                break
 
-    children = table_ctrl.get("children")
-    if isinstance(children, list):
-        return children
+    # Path 2: direct children
+    if not candidates:
+        for key in ("children", "sub_components", "subControls", "sub_controls"):
+            children = table_ctrl.get(key)
+            if isinstance(children, list):
+                candidates = children
+                logger.debug("  Found %d children via %s", len(candidates), key)
+                break
 
-    if isinstance(widget, dict):
-        sub = widget.get("sub_components") or widget.get("subControls") or widget.get("sub_controls")
-        if isinstance(sub, list):
-            return sub
+    # Path 3: recursive search through all nested dict values
+    if not candidates:
+        def _recurse_search(obj, depth=0):
+            if depth > 5:
+                return
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k in ("children", "sub_components", "subControls", "sub_controls"):
+                        if isinstance(v, list) and any(isinstance(c, dict) and "id" in c for c in v):
+                            candidates.extend(v)
+                    _recurse_search(v, depth + 1)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _recurse_search(item, depth + 1)
+        _recurse_search(table_ctrl)
+        if candidates:
+            logger.debug("  Found %d children via recursive search", len(candidates))
 
-    return []
+    if not candidates:
+        logger.warning(
+            "  No children found! Raw table_ctrl keys: %s",
+            list(table_ctrl.keys()),
+        )
+
+    return candidates
 
 
 if __name__ == "__main__":

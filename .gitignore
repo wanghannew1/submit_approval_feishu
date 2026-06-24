@@ -22,3 +22,6 @@ Thumbs.db
 # Temp files
 *.tmp
 test_*_mock.py
+
+# Application logs
+log/
