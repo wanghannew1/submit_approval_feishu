@@ -332,7 +332,6 @@ class FeishuClient:
             .build()
 
         request = CreateInstanceRequest.builder() \
-            .locale("zh-CN") \
             .request_body(body) \
             .build()
         response = self.client.approval.v4.instance.create(request)
