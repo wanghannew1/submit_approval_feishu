@@ -53,6 +53,10 @@
         "keywords": ["扣工会会费", "工会会费"],
         "label": "扣工会会费"
       },
+      "accident_insurance": {
+        "keywords": ["意外险（个人承担）"],
+        "label": "意外险（个人承担）"
+      },
       "pay_cash": {
         "keywords": ["交纳现金", "缴纳现金"],
         "label": "交纳现金"
@@ -71,13 +75,14 @@
       {"column": "net_gross"},
       {"column": "net_total"},
       {"column": "adjustment"},
-      {"column": "pay_cash"}
+      {"column": "pay_cash"},
+      {"column": "accident_insurance"}
     ],
     "row_formulas": [
       {
-        "name": "转账合计 = 扣款合计 + 个人所得税 + 个人其他调整 + 个人欠款 + 个人承担代理费 + 扣工会会费 - 交纳现金 + 实发合计",
+        "name": "转账合计 = 扣款合计 + 个人所得税 + 个人其他调整 + 个人欠款 + 个人承担代理费 + 扣工会会费 + 意外险（个人承担） - 交纳现金 + 实发合计",
         "lhs": "transfer_total",
-        "rhs_plus": ["deduction_total", "personal_tax", "adjustment", "personal_debt", "personal_proxy_fee", "union_fee", "net_total"],
+        "rhs_plus": ["deduction_total", "personal_tax", "adjustment", "personal_debt", "personal_proxy_fee", "union_fee", "accident_insurance", "net_total"],
         "rhs_minus": ["pay_cash"]
       }
     ],
@@ -96,6 +101,7 @@
         {"key": "personal_debt", "label": "个人欠款"},
         {"key": "personal_proxy_fee", "label": "个人承担代理费"},
         {"key": "union_fee", "label": "扣工会会费"},
+        {"key": "accident_insurance", "label": "意外险（个人承担）"},
         {"key": "pay_cash", "label": "交纳现金"},
         {"key": "adjustment", "label": "个人其他调整"},
         {"key": "net_total", "label": "实发合计（元）"}
@@ -123,6 +129,7 @@
       "pay_cash": {"feishu_type": "amount", "feishu_id": "widget17816837666160001"},
       "personal_proxy_fee": {"feishu_type": "amount", "feishu_id": "widget17811633075360001"},
       "union_fee": {"feishu_type": "amount", "feishu_id": "widget17811633663510001"},
+      "accident_insurance": {"feishu_type": "amount", "feishu_id": ""},
       "adjustment": {"feishu_type": "amount", "feishu_id": "widget17811633849100001"},
       "net_total": {"feishu_type": "amount", "feishu_id": "widget17811634196160001"}
     }
