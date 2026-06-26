@@ -464,6 +464,9 @@ def parse_excel(file_bytes, filename):
 
     # Unit name: from unit_name_row if configured, else extract from title row
     unit_name = ""
+    # 如果 unit_name_row 提取的结果包含这些表头关键字，说明那不是单位名行，应丢弃
+    _HEADER_KEYWORDS = {"序号", "姓名", "身份证号", "基本工资", "应发工资",
+                        "扣款合计", "实发工资", "实发合计", "转款合计", "转账合计"}
     if unit_name_row_cfg > 0:
         unit_row_idx = unit_name_row_cfg - 1
         if 0 <= unit_row_idx < len(rows):
@@ -478,15 +481,24 @@ def parse_excel(file_bytes, filename):
                     matched = True
                     break
             if not matched:
-                # Fallback: use first non-empty cell in that row
+                # Fallback: 用正则严格匹配"单位名称：xxx"或"名称：xxx"模式，
+                # 避免把列头中的"单位代理费""单位缴纳五险一金"误提取为单位名称
+                name_unit_pat = re.compile(r'(?:单位)?名称\s*[：:]\s*(.+)')
                 for cell in rows[unit_row_idx]:
-                    if cell is not None and str(cell).strip():
+                    if cell is not None:
                         val = str(cell).strip()
-                        if "名称" in val or "单位" in val:
-                            unit_name = val.replace("单位", "").replace("名称", "").replace("：", "").replace(":", "").strip()
+                        m = name_unit_pat.search(val)
+                        if m:
+                            unit_name = m.group(1).strip()
                             break
-    else:
-        # No dedicated unit row → extract from title row
+            # 验证提取结果：如果包含表头关键字，丢弃，从标题行提取
+            if unit_name and any(kw in unit_name for kw in _HEADER_KEYWORDS):
+                unit_name = ""
+            # 如果提取结果为空或太短（<2字），也丢弃，从标题行提取
+            if len(unit_name) < 2:
+                unit_name = ""
+    if not unit_name:
+        # No dedicated unit row (or extraction failed) → extract from title row
         # 1) 高级用户可通过 title_unit_patterns 提供自定义正则（取第一个命中的 group 1）
         if title_patterns:
             for pattern in title_patterns:
@@ -557,11 +569,28 @@ def parse_excel(file_bytes, filename):
 
     # Header rows from config (1-based start, N rows)
     header_rows = rows[header_start_idx : header_start_idx + header_row_count]
+    # 后备搜索范围：从标题行之后到合计行之前的所有行
+    # 当配置的列头范围与实际文件不匹配时用此兜底，保证列关键字总能被找到
+    fallback_search_start = title_row_idx + 1
+    fallback_search_end = summary_row_idx
+    fallback_rows = rows[fallback_search_start:fallback_search_end] if fallback_search_end > fallback_search_start else []
 
-    def find_col_index(keywords, exact_first=True):
-        """Find column index matching keywords in header rows."""
-        # Try exact match first
+    def find_col_index(keywords):
         for ridx, hrow in enumerate(header_rows):
+            for cidx, cell in enumerate(hrow):
+                if cell is None:
+                    continue
+                text = str(cell).strip()
+                if not text:
+                    continue
+                for kw in keywords:
+                    if kw in text:
+                        return cidx
+        return -1
+
+    def find_col_index_broad(keywords):
+        """搜索所有行（从标题后到合计前），不受配置的列头范围限制"""
+        for ridx, hrow in enumerate(fallback_rows):
             for cidx, cell in enumerate(hrow):
                 if cell is None:
                     continue
@@ -575,42 +604,89 @@ def parse_excel(file_bytes, filename):
 
     excel_cols = excel_cfg["columns"]
 
-    # 通用化：把 excel.columns 里定义的每一列都找出索引，存到 column_indices
-    # 同时按 keywords 顺序匹配（早出现的优先），跟原来 net_total 的逻辑一致
+    # 把所有 excel.columns 列都找出索引：先用配置的列头范围搜，搜不到则用宽范围兜底
     column_indices = {}
     for col_key, col_def in excel_cols.items():
-        keywords = col_def.get("keywords", [])
         idx = -1
-        for kw in keywords:
+        for kw in col_def.get("keywords", []):
             idx = find_col_index([kw])
             if idx != -1:
                 break
+        if idx == -1 and fallback_rows:
+            for kw in col_def.get("keywords", []):
+                idx = find_col_index_broad([kw])
+                if idx != -1:
+                    break
         column_indices[col_key] = idx
+
+    # 数据行起始位置智能检测：从标题行向下扫描，找到第1列为数字序号的行作为数据起点
+    # 这样即使 header_start_row 配置与实际文件不匹配，也能正确切分
+    data_start_idx = None
+    for ridx in range(title_row_idx + 1, summary_row_idx):
+        r = rows[ridx]
+        if r and len(r) > 0:
+            v = r[0]
+            if isinstance(v, (int, float)):
+                data_start_idx = ridx
+                break
+            if isinstance(v, str) and re.match(r'^\d+$', v.strip()):
+                data_start_idx = ridx
+                break
+    if data_start_idx is not None:
+        header_end_idx = data_start_idx
+    else:
+        header_end_idx = header_start_idx + header_row_count
+
+    # 数据行 = 表头之后 到 合计行之前；过滤掉全空行
+    data_rows = []
+    for r in rows[header_end_idx:summary_row_idx]:
+        if r is None:
+            continue
+        if all(c is None or (isinstance(c, str) and not c.strip()) for c in r):
+            continue
+        data_rows.append(r)
+
+    def _sum_data_rows(col_key):
+        """从数据行汇总某列的总和，供合计行缺失时兜底"""
+        cidx = column_indices.get(col_key, -1)
+        if cidx < 0 or not data_rows:
+            return 0.0
+        total = 0.0
+        for row in data_rows:
+            if cidx < len(row):
+                v = row[cidx]
+                try:
+                    total += float(v) if v is not None else 0.0
+                except (ValueError, TypeError):
+                    pass
+        return round(total, 2)
+
+    def get_val(idx, col_key=None):
+        if idx >= 0 and idx < len(summary_row):
+            v = summary_row[idx]
+            if v is not None:
+                try:
+                    return f"{float(v):.2f}"
+                except (ValueError, TypeError):
+                    return str(v).strip() or "0.00"
+        # 合计行单元格为空 → 从数据行汇总兜底
+        if col_key and data_rows:
+            s = _sum_data_rows(col_key)
+            return f"{s:.2f}"
+        return "0.00"
 
     transfer_idx = column_indices.get("transfer_total", -1)
     deduction_idx = column_indices.get("deduction_total", -1)
     net_idx = column_indices.get("net_total", -1)
 
-    def get_val(idx):
-        if idx >= 0 and idx < len(summary_row):
-            v = summary_row[idx]
-            if v is None:
-                return "0.00"
-            try:
-                return f"{float(v):.2f}"
-            except (ValueError, TypeError):
-                return str(v).strip() or "0.00"
-        return "0.00"
+    transfer_total = get_val(transfer_idx, "transfer_total")
+    deduction_total = get_val(deduction_idx, "deduction_total")
+    net_total = get_val(net_idx, "net_total")
 
-    transfer_total = get_val(transfer_idx)
-    deduction_total = get_val(deduction_idx)
-    net_total = get_val(net_idx)
-
-    # 把 excel.columns 里所有定义过的列，都从合计行取值，统一加到返回 dict
-    # 这样 table_field 可以引用任意 excel.columns 里定义的 key（如 personal_tax, adjustment）
+    # 把 excel.columns 里所有定义过的列，都从合计行取值（合计行缺失则汇总数据行），统一加到返回 dict
     column_summary_values = {}
     for col_key, cidx in column_indices.items():
-        column_summary_values[col_key] = get_val(cidx)
+        column_summary_values[col_key] = get_val(cidx, col_key)
 
     try:
         tax_val = float(transfer_total) - float(deduction_total) - float(net_total)
@@ -624,16 +700,6 @@ def parse_excel(file_bytes, filename):
         tax_and_others = f"{tax_val:.2f}"
     except (ValueError, TypeError):
         tax_and_others = "0.00"
-
-    # 数据行 = 表头之后 到 合计行之前；过滤掉全空行
-    header_end_idx = header_start_idx + header_row_count
-    data_rows = []
-    for r in rows[header_end_idx:summary_row_idx]:
-        if r is None:
-            continue
-        if all(c is None or (isinstance(c, str) and not c.strip()) for c in r):
-            continue
-        data_rows.append(r)
 
     result = {
         "report_name": report_name,
@@ -1388,8 +1454,20 @@ def main():
     # 显示审批标题（title 已在上方汇总表前生成）
     st.text_input("审批标题（自动生成）", value=title, disabled=True)
 
+    # 零金额防护：转账合计和实发合计同时为0的工资表没有意义，禁止提交
+    zero_amount_blocked = False
+    for p in parsed_list:
+        trans = p.get("transfer_total", "0.00")
+        net = p.get("net_total", "0.00")
+        if trans in ("0.00", "0", "", None) and net in ("0.00", "0", "", None):
+            zero_amount_blocked = True
+            st.error(
+                f"⚠️ {p['filename']}：转账合计和实发合计均为 0，"
+                f"该工资表无实际发放金额，请确认数据是否正确后重新上传。"
+            )
+
     # Submit button
-    final_blocked = submit_blocked or signature_check_blocked
+    final_blocked = submit_blocked or signature_check_blocked or zero_amount_blocked
     if submit_blocked:
         st.error("⚠️ 校验未通过且当前为严格模式，请修改 Excel 后重新上传")
     if st.button("提交审批", disabled=final_blocked):
