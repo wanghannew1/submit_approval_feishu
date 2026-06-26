@@ -1485,12 +1485,12 @@ def main():
     # 生成「工资发放汇总表」xlsx：把数据预览 + 所有附件的验证明细打包成一个文件
     # 用途：(1) .xls 附件无法回写验证 sheet，靠这里集中展示；
     #      (2) 多附件场景下提供全局视图；(3) 作为额外附件随审批一起归档
-    # 文件名从审批标题派生：把"工资发放请示"换成"工资发放汇总表"，与审批主题保持一致
+    # 文件名从审批标题派生：把"工资发放请示"换成"工资发放汇总表及验证明细"
     if "工资发放请示" in title:
-        summary_filename = title.replace("工资发放请示", "工资发放汇总表") + ".xlsx"
+        summary_filename = title.replace("工资发放请示", "工资发放汇总表及验证明细") + ".xlsx"
     else:
         summary_filename = (
-            f"{title}汇总表.xlsx" if title else "工资发放汇总表.xlsx"
+            f"{title}汇总表及验证明细.xlsx" if title else "工资发放汇总表及验证明细.xlsx"
         )
     try:
         summary_bytes = build_summary_workbook(
