@@ -67,7 +67,7 @@
     "enabled": true,
     "strict": true,
     "tolerance": 0.00,
-    "write_back_sheet": true,
+    "write_back_sheet": false,
     "write_back_sheet_name": "验证结果",
     "column_sum_checks": [
       {"column": "deduction_total"},
