@@ -1326,6 +1326,7 @@ def build_summary_workbook(parsed_list, validation_results, tf_columns,
         "row_formula_summary": "横向公式",
         "row_formula_rows": "横向公式",
         "table_format": "表格格式",
+        "required_headers": "必需列",
         "signature_check": "签名栏",
     }
     cur = 4
@@ -1333,6 +1334,7 @@ def build_summary_workbook(parsed_list, validation_results, tf_columns,
         fn = p.get("filename", "")
         vr = validation_results.get(fn)
         sr = (signature_results or {}).get(fn)
+        sfr = (signer_fields_results or {}).get(fn)
 
         # 签名栏检查行（放在最前面，最重要）
         if sr is not None:
@@ -1349,6 +1351,23 @@ def build_summary_workbook(parsed_list, validation_results, tf_columns,
                 if sr["found"]:
                     detail += f"；已找到: {'、'.join(sr['found'])}"
                 ws2.cell(row=cur, column=5, value=detail)
+                fill = fail_fill
+            for cidx in range(1, 6):
+                ws2.cell(row=cur, column=cidx).fill = fill
+            cur += 1
+
+        # 签名栏字段值非空检查（如制表人）
+        if sfr is not None:
+            ws2.cell(row=cur, column=1, value=fn)
+            ws2.cell(row=cur, column=2, value="签名栏字段值")
+            ws2.cell(row=cur, column=3, value="签名栏")
+            if sfr["ok"]:
+                ws2.cell(row=cur, column=4, value="✅ 通过")
+                ws2.cell(row=cur, column=5, value=f"已填写: {'、'.join(sfr['empty_fields'])}" if sfr['empty_fields'] else "全部已填写")
+                fill = pass_fill
+            else:
+                ws2.cell(row=cur, column=4, value="❌ 失败")
+                ws2.cell(row=cur, column=5, value=f"「{sfr['empty_fields'][0]}」未填写姓名")
                 fill = fail_fill
             for cidx in range(1, 6):
                 ws2.cell(row=cur, column=cidx).fill = fill
