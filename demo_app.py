@@ -1411,8 +1411,20 @@ def main():
                     st.info(f"📎 {orig_name} → {new_name}（文件名已自动规范化）")
                 parsed_list.append({"filename": new_name, **parsed})
             else:
-                rename_map[idx] = orig_name
-                parsed_list.append({"filename": orig_name, **parsed})
+                if orig_name in used_filenames:
+                    base, ext = os.path.splitext(orig_name)
+                    dup_idx = 1
+                    while f"{base}_{dup_idx}{ext}" in used_filenames:
+                        dup_idx += 1
+                    deduped = f"{base}_{dup_idx}{ext}"
+                    used_filenames.add(deduped)
+                    rename_map[idx] = deduped
+                    parsed_list.append({"filename": deduped, **parsed})
+                    st.info(f"📎 {orig_name} → {deduped}（文件名重复，已添加编号）")
+                else:
+                    used_filenames.add(orig_name)
+                    rename_map[idx] = orig_name
+                    parsed_list.append({"filename": orig_name, **parsed})
 
     if not parsed_list:
         st.error("未能解析任何文件，请检查格式")
