@@ -1392,6 +1392,7 @@ def main():
     # Parse each file
     parsed_list = []
     used_filenames = set()  # 跟踪已使用的文件名，防止重名
+    rename_map = {}         # orig_name → normalized_name，用于后续上传/校验回写
     for upfile in uploaded_files:
         file_bytes = upfile.read()
         upfile.seek(0)
@@ -1405,10 +1406,12 @@ def main():
                     parsed.get("year_month", ""), used_filenames
                 )
                 used_filenames.add(new_name)
+                rename_map[orig_name] = new_name
                 if new_name != orig_name:
                     st.info(f"📎 {orig_name} → {new_name}（文件名已自动规范化）")
                 parsed_list.append({"filename": new_name, **parsed})
             else:
+                rename_map[orig_name] = orig_name
                 parsed_list.append({"filename": orig_name, **parsed})
 
     if not parsed_list:
@@ -1442,13 +1445,14 @@ def main():
         for upfile in uploaded_files:
             file_bytes = upfile.read()
             upfile.seek(0)
+            norm_name = rename_map.get(upfile.name, upfile.name)
             result = check_signatures(file_bytes, upfile.name, required_sigs)
-            signature_results[upfile.name] = result
+            signature_results[norm_name] = result
             if not result["ok"]:
                 signature_check_blocked = True
                 missing_list = "、".join(result["missing"])
                 st.error(
-                    f"⚠️ {upfile.name}：缺少签名栏信息 — {missing_list}。"
+                    f"⚠️ {norm_name}：缺少签名栏信息 — {missing_list}。"
                     f"请确保 Excel 文件中包含这些字段后再上传。"
                 )
     if val_cfg.get("enabled"):
@@ -1614,12 +1618,13 @@ def main():
             total_steps = len(uploaded_files) + (1 if summary_bytes else 0) + 1
             done_steps = 0
             for i, upfile in enumerate(uploaded_files):
-                status_text.text(f"正在上传：{upfile.name} ...")
+                norm_name = rename_map.get(upfile.name, upfile.name)
+                status_text.text(f"正在上传：{norm_name} ...")
                 file_bytes = upfile.read()
                 upfile.seek(0)
 
                 # 若启用了 write_back_sheet，把校验结果作为新 sheet 追加到 Excel 后再上传
-                vr = validation_results.get(upfile.name)
+                vr = validation_results.get(norm_name)
                 if (vr is not None
                     and val_cfg.get("enabled")
                     and val_cfg.get("write_back_sheet", True)
@@ -1628,14 +1633,14 @@ def main():
                         file_bytes,
                         vr,
                         sheet_name=val_cfg.get("write_back_sheet_name", "验证结果"),
-                        source_filename=upfile.name,
+                        source_filename=norm_name,
                     )
 
                 import tempfile
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                     tmp.write(file_bytes)
                     tmp_path = tmp.name
-                file_code = client.upload_file_to_feishu(tmp_path, filename=upfile.name)
+                file_code = client.upload_file_to_feishu(tmp_path, filename=norm_name)
                 os.unlink(tmp_path)
                 if file_code:
                     file_codes.append(file_code)
