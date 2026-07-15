@@ -1034,6 +1034,59 @@ def check_signatures(file_bytes, filename, required_sigs):
     return {"ok": False, "found": found, "missing": missing}
 
 
+def check_signer_fields(file_bytes, required_fields):
+    """
+    检查签名栏中的指定字段（如"制表人"）是否填写了实际内容（非空）。
+    required_fields: ["制表人", ...]
+    返回: {"ok": bool, "empty_fields": [field_name, ...]}
+    """
+    if not required_fields:
+        return {"ok": True, "empty_fields": []}
+    import xlrd
+    from openpyxl import load_workbook
+
+    empty_fields = []
+    for field in required_fields:
+        found_value = False
+        # 尝试 openpyxl（.xlsx）
+        try:
+            wb = load_workbook(BytesIO(file_bytes) if not isinstance(file_bytes, str) else file_bytes, data_only=True)
+            ws = wb.active
+            for row in ws.iter_rows():
+                for cell in row:
+                    val = str(cell.value or "").strip()
+                    if field in val:
+                        remainder = val.split(field, 1)[-1].strip().lstrip("：: ")
+                        if remainder:
+                            found_value = True
+                            break
+                if found_value:
+                    break
+            wb.close()
+        except Exception:
+            pass
+        if not found_value:
+            # 回退 xlrd（.xls）
+            try:
+                wb = xlrd.open_workbook(file_contents=file_bytes)
+                ws = wb.sheet_by_index(0)
+                for r in range(ws.nrows):
+                    for c in range(ws.ncols):
+                        val = str(ws.cell_value(r, c)).strip()
+                        if field in val:
+                            remainder = val.split(field, 1)[-1].strip().lstrip("：: ")
+                            if remainder:
+                                found_value = True
+                                break
+                    if found_value:
+                        break
+            except Exception:
+                pass
+        if not found_value:
+            empty_fields.append(field)
+    return {"ok": len(empty_fields) == 0, "empty_fields": empty_fields}
+
+
 def append_validation_sheet(file_bytes, validation_result,
                             sheet_name="验证结果",
                             source_filename=""):
@@ -1507,6 +1560,22 @@ def main():
                     f"⚠️ {norm_name}：缺少签名栏信息 — {missing_list}。"
                     f"请确保 Excel 文件中包含这些字段后再上传。"
                 )
+
+    # 签名栏字段值非空检查（如制表人必须填写姓名）
+    required_signer_fields = val_cfg.get("required_signer_fields", []) or []
+    if required_signer_fields:
+        for idx, upfile in enumerate(uploaded_files):
+            file_bytes = upfile.read()
+            upfile.seek(0)
+            norm_name = rename_map.get(idx, upfile.name)
+            sr_result = check_signer_fields(file_bytes, required_signer_fields)
+            if not sr_result["ok"]:
+                signature_check_blocked = True
+                st.error(
+                    f"⚠️ {norm_name}：签名栏「{sr_result['empty_fields'][0]}」未填写姓名，"
+                    f"请填写实际制表人姓名后重试。"
+                )
+
     if val_cfg.get("enabled"):
         excel_cols_def = CONFIG.get("excel", {}).get("columns", {})
         for p in parsed_list:

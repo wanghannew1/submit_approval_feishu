@@ -160,6 +160,9 @@
       "实发工资",
       "实发合计"
     ],
+    "required_signer_fields": [
+      "制表人"
+    ],
     "required_signatures": [
       [
         "总经理签字",
