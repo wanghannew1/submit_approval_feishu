@@ -1299,6 +1299,31 @@ def generate_title(unit_names, year_month, amounts):
     return f"{unit_names[0]}、{unit_names[1]}等{n}家单位{year_month}工资发放请示"
 
 
+def _needs_rename(filename):
+    """检测文件名是否为乱码/无意义名称（不含中文且不包含单位关键词）"""
+    name, _ = os.path.splitext(os.path.basename(filename))
+    # 包含中文 → 认为是有意义名称
+    if re.search(r'[\u4e00-\u9fff]', name):
+        return False
+    # 全英文/数字/符号 → 需要重命名
+    return True
+
+
+def _normalize_filename(filename, unit_name, year_month, existing_names):
+    """
+    生成规范化文件名：单位名称+年月+工资表.ext
+    保留原扩展名，重名则追加 _1, _2 后缀。
+    """
+    ext = os.path.splitext(filename)[1] or ".xlsx"
+    clean = f"{unit_name}{year_month}工资表{ext}"
+    if clean not in existing_names:
+        return clean
+    idx = 1
+    while f"{unit_name}{year_month}工资表_{idx}{ext}" in existing_names:
+        idx += 1
+    return f"{unit_name}{year_month}工资表_{idx}{ext}"
+
+
 def main():
     ui_config = CONFIG.get("ui", DEFAULT_CONFIG["ui"])
     template_name = ui_config.get("template_name", "工资发放审批")
@@ -1366,12 +1391,25 @@ def main():
 
     # Parse each file
     parsed_list = []
+    used_filenames = set()  # 跟踪已使用的文件名，防止重名
     for upfile in uploaded_files:
         file_bytes = upfile.read()
         upfile.seek(0)
         parsed = parse_excel(file_bytes, upfile.name)
         if parsed:
-            parsed_list.append({"filename": upfile.name, **parsed})
+            # 乱码文件名自动重命名为「单位名称+年月+工资表.xlsx」
+            orig_name = upfile.name
+            if _needs_rename(orig_name):
+                new_name = _normalize_filename(
+                    orig_name, parsed.get("unit_name", ""),
+                    parsed.get("year_month", ""), used_filenames
+                )
+                used_filenames.add(new_name)
+                if new_name != orig_name:
+                    st.info(f"📎 {orig_name} → {new_name}（文件名已自动规范化）")
+                parsed_list.append({"filename": new_name, **parsed})
+            else:
+                parsed_list.append({"filename": orig_name, **parsed})
 
     if not parsed_list:
         st.error("未能解析任何文件，请检查格式")
