@@ -1392,8 +1392,8 @@ def main():
     # Parse each file
     parsed_list = []
     used_filenames = set()  # 跟踪已使用的文件名，防止重名
-    rename_map = {}         # orig_name → normalized_name，用于后续上传/校验回写
-    for upfile in uploaded_files:
+    rename_map = {}         # idx → normalized_name，用于后续上传/校验回写
+    for idx, upfile in enumerate(uploaded_files):
         file_bytes = upfile.read()
         upfile.seek(0)
         parsed = parse_excel(file_bytes, upfile.name)
@@ -1406,12 +1406,12 @@ def main():
                     parsed.get("year_month", ""), used_filenames
                 )
                 used_filenames.add(new_name)
-                rename_map[orig_name] = new_name
+                rename_map[idx] = new_name
                 if new_name != orig_name:
                     st.info(f"📎 {orig_name} → {new_name}（文件名已自动规范化）")
                 parsed_list.append({"filename": new_name, **parsed})
             else:
-                rename_map[orig_name] = orig_name
+                rename_map[idx] = orig_name
                 parsed_list.append({"filename": orig_name, **parsed})
 
     if not parsed_list:
@@ -1442,10 +1442,10 @@ def main():
     signature_check_blocked = False
 
     if required_sigs:
-        for upfile in uploaded_files:
+        for idx, upfile in enumerate(uploaded_files):
             file_bytes = upfile.read()
             upfile.seek(0)
-            norm_name = rename_map.get(upfile.name, upfile.name)
+            norm_name = rename_map.get(idx, upfile.name)
             result = check_signatures(file_bytes, upfile.name, required_sigs)
             signature_results[norm_name] = result
             if not result["ok"]:
@@ -1618,7 +1618,7 @@ def main():
             total_steps = len(uploaded_files) + (1 if summary_bytes else 0) + 1
             done_steps = 0
             for i, upfile in enumerate(uploaded_files):
-                norm_name = rename_map.get(upfile.name, upfile.name)
+                norm_name = rename_map.get(i, upfile.name)
                 status_text.text(f"正在上传：{norm_name} ...")
                 file_bytes = upfile.read()
                 upfile.seek(0)
