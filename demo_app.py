@@ -561,6 +561,7 @@ def parse_excel(file_bytes, filename):
             "column_indices": {},
             "summary_row": None,
             "data_rows": [],
+            "all_header_texts": set(),
         }
         # 兜底也要把 excel.columns 里所有列填上 "0.00"，避免下游 KeyError
         for col_key in excel_cfg.get("columns", {}):
@@ -574,6 +575,21 @@ def parse_excel(file_bytes, filename):
     fallback_search_start = title_row_idx + 1
     fallback_search_end = summary_row_idx
     fallback_rows = rows[fallback_search_start:fallback_search_end] if fallback_search_end > fallback_search_start else []
+
+    # 收集所有表头区域内的单元格文本，供 required_headers 校验
+    all_header_texts = set()
+    for hrow in header_rows:
+        for cell in (hrow or []):
+            if cell is not None:
+                t = str(cell).strip()
+                if t:
+                    all_header_texts.add(t)
+    for hrow in fallback_rows:
+        for cell in (hrow or []):
+            if cell is not None:
+                t = str(cell).strip()
+                if t:
+                    all_header_texts.add(t)
 
     def find_col_index(keywords):
         for ridx, hrow in enumerate(header_rows):
@@ -711,6 +727,7 @@ def parse_excel(file_bytes, filename):
         "column_indices": column_indices,
         "summary_row": summary_row,
         "data_rows": data_rows,
+        "all_header_texts": all_header_texts,
         "_cfg_cols": {
             "header_start_row": excel_cfg.get("header_start_row", default_excel["header_start_row"]),
             "header_row_count": excel_cfg.get("header_row_count", default_excel["header_row_count"]),
@@ -934,6 +951,29 @@ def validate_payroll(parsed, validation_cfg, excel_cols):
         "passed": passed,
         "detail": detail,
     })
+
+    # === E. 必需列头检查：工资表必须包含这些列 ===
+    required_headers = validation_cfg.get("required_headers", []) or []
+    all_texts = parsed.get("all_header_texts", set())
+    missing_required = []
+    for rh in required_headers:
+        found = any(rh in t for t in all_texts)
+        if not found:
+            missing_required.append(rh)
+    if missing_required:
+        checks.append({
+            "kind": "required_headers",
+            "name": "必需列检查",
+            "passed": False,
+            "detail": f"缺少必需列头：{'、'.join(missing_required)}",
+        })
+    else:
+        checks.append({
+            "kind": "required_headers",
+            "name": "必需列检查",
+            "passed": True,
+            "detail": "",
+        })
 
     passed_count = sum(1 for c in checks if c["passed"])
     failed_count = len(checks) - passed_count
