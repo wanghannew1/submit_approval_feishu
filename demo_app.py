@@ -1597,6 +1597,9 @@ def main():
             validation_results[p["filename"]] = vr
             if vr is not None and not vr["ok"] and val_cfg.get("strict"):
                 submit_blocked = True
+                for c in vr.get("checks", []):
+                    if not c["passed"] and c.get("detail") and c["kind"] in ("table_format", "required_headers"):
+                        st.error(f"⚠️ {p['filename']}：{c['detail']}")
 
     # Preview table
     st.subheader("数据预览")
