@@ -1578,8 +1578,27 @@ def main():
                 f"第 {hdr_s}–{hdr_e} 行为组合表头。如文件格式不同，请联系管理员调整配置。"
             )
 
+    duplicate_blocked = False
+    for i in range(len(parsed_list)):
+        for j in range(i + 1, len(parsed_list)):
+            a, b = parsed_list[i], parsed_list[j]
+            same_unit = a.get("unit_name", "").strip() == b.get("unit_name", "").strip()
+            same_ym = a.get("year_month", "").strip() == b.get("year_month", "").strip()
+            same_trans = (a.get("transfer_total") or "0") == (b.get("transfer_total") or "0")
+            same_deduct = (a.get("deduction_total") or "0") == (b.get("deduction_total") or "0")
+            same_net = (a.get("net_total") or "0") == (b.get("net_total") or "0")
+            if same_unit and same_ym and same_trans and same_deduct and same_net:
+                duplicate_blocked = True
+                st.error(
+                    f"⚠️ 文件「{a['filename']}」与「{b['filename']}」为重复上传："
+                    f"单位均为「{a['unit_name']}」、"
+                    f"年月均为「{a['year_month']}」，"
+                    f"且转账合计、扣款合计、实发合计数值均相同。"
+                    f"请移除重复文件后重试。"
+                )
+
     # Submit button
-    final_blocked = submit_blocked or signature_check_blocked or zero_amount_blocked
+    final_blocked = submit_blocked or signature_check_blocked or zero_amount_blocked or duplicate_blocked
     if submit_blocked:
         st.error("⚠️ 校验未通过且当前为严格模式，请修改 Excel 后重新上传")
     if st.button("提交审批", disabled=final_blocked):
