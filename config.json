@@ -9,56 +9,96 @@
       "(?:单位名称[：:]|[名称][：:]\\s*)(.+?)(?:\\s|$)"
     ],
     "title_unit_suffixes": [
-      "有限公司", "股份公司", "分公司", "公司", "集团",
-      "医院", "卫生院", "诊所",
-      "研究院", "研究所", "学院", "大学", "学校",
-      "中心", "管委会", "事业部", "处", "局"
+      "有限公司",
+      "股份公司",
+      "分公司",
+      "公司",
+      "集团",
+      "医院",
+      "卫生院",
+      "诊所",
+      "研究院",
+      "研究所",
+      "学院",
+      "大学",
+      "学校",
+      "中心",
+      "管委会",
+      "事业部",
+      "处",
+      "局"
     ],
     "title_unit_allowed_chars": "[一-龥A-Za-z0-9（）()·\\-—]",
     "title_unit_patterns": [],
     "columns": {
       "transfer_total": {
-        "keywords": ["转账合计", "转款合计"],
+        "keywords": [
+          "转账合计",
+          "转款合计"
+        ],
         "label": "转账合计（元）"
       },
       "deduction_total": {
-        "keywords": ["扣款合计"],
+        "keywords": [
+          "扣款合计"
+        ],
         "label": "扣款合计（五险一金、单位代理费）"
       },
       "net_gross": {
-        "keywords": ["实发工资"],
+        "keywords": [
+          "实发工资"
+        ],
         "label": "实发工资（扣调整前）"
       },
       "net_total": {
-        "keywords": ["实发合计"],
+        "keywords": [
+          "实发合计"
+        ],
         "label": "实发合计（元）"
       },
       "personal_tax": {
-        "keywords": ["个人所得税", "个税"],
+        "keywords": [
+          "个人所得税",
+          "个税"
+        ],
         "label": "个人所得税"
       },
       "adjustment": {
-        "keywords": ["个人其他调整"],
+        "keywords": [
+          "个人其他调整"
+        ],
         "label": "个人其他调整"
       },
       "personal_debt": {
-        "keywords": ["个人欠款"],
+        "keywords": [
+          "个人欠款"
+        ],
         "label": "个人欠款"
       },
       "personal_proxy_fee": {
-        "keywords": ["个人承担代理费"],
+        "keywords": [
+          "个人承担代理费"
+        ],
         "label": "个人承担代理费"
       },
       "union_fee": {
-        "keywords": ["扣工会会费", "工会会费"],
+        "keywords": [
+          "扣工会会费",
+          "工会会费"
+        ],
         "label": "扣工会会费"
       },
       "accident_insurance": {
-        "keywords": ["意外险（个人承担）"],
+        "keywords": [
+          "意外险（个人承担）"
+        ],
         "label": "意外险（个人承担）"
       },
       "pay_cash": {
-        "keywords": ["交纳现金", "缴纳现金"],
+        "keywords": [
+          "交纳现金",
+          "缴纳现金"
+        ],
         "label": "交纳现金"
       }
     }
@@ -66,45 +106,115 @@
   "validation": {
     "enabled": true,
     "strict": true,
-    "tolerance": 0.00,
+    "tolerance": 0.0,
     "write_back_sheet": false,
     "write_back_sheet_name": "验证结果",
     "column_sum_checks": [
-      {"column": "deduction_total"},
-      {"column": "personal_tax"},
-      {"column": "net_gross"},
-      {"column": "net_total"},
-      {"column": "adjustment"},
-      {"column": "pay_cash"},
-      {"column": "accident_insurance"}
+      {
+        "column": "deduction_total"
+      },
+      {
+        "column": "personal_tax"
+      },
+      {
+        "column": "net_gross"
+      },
+      {
+        "column": "net_total"
+      },
+      {
+        "column": "adjustment"
+      },
+      {
+        "column": "pay_cash"
+      },
+      {
+        "column": "accident_insurance"
+      }
     ],
     "row_formulas": [
       {
         "name": "转账合计 = 扣款合计 + 个人所得税 + 个人其他调整 + 个人欠款 + 个人承担代理费 + 扣工会会费 + 意外险（个人承担） - 交纳现金 + 实发合计",
         "lhs": "transfer_total",
-        "rhs_plus": ["deduction_total", "personal_tax", "adjustment", "personal_debt", "personal_proxy_fee", "union_fee", "accident_insurance", "net_total"],
-        "rhs_minus": ["pay_cash"]
+        "rhs_plus": [
+          "deduction_total",
+          "personal_tax",
+          "adjustment",
+          "personal_debt",
+          "personal_proxy_fee",
+          "union_fee",
+          "accident_insurance",
+          "net_total"
+        ],
+        "rhs_minus": [
+          "pay_cash"
+        ]
       }
     ],
     "required_signatures": [
-      ["总经理签字", "部长签字|部长、分管副总签字|分管领导审核", "财务审核", "业务审核"],
-      ["总经理签字", "部长签字|部长、分管副总签字|分管领导审核", "财务审核"]
+      [
+        "总经理签字",
+        "部长签字|部长、分管副总签字|分管领导审核",
+        "财务审核",
+        "业务审核"
+      ],
+      [
+        "总经理签字",
+        "部长签字|部长、分管副总签字|分管领导审核",
+        "财务审核"
+      ]
     ]
   },
   "table_field": {
     "columns": [
-      {"key": "report_name", "label": "报表名称"},
-      {"key": "unit_name", "label": "甲方单位项目名称"},
-      {"key": "transfer_total", "label": "转账合计（元）"},
-      {"key": "deduction_total", "label": "扣款合计（五险一金、单位代理费）"},
-      {"key": "personal_tax", "label": "个人所得税"},
-        {"key": "personal_debt", "label": "个人欠款"},
-        {"key": "personal_proxy_fee", "label": "个人承担代理费"},
-        {"key": "union_fee", "label": "扣工会会费"},
-        {"key": "accident_insurance", "label": "意外险（个人承担）"},
-        {"key": "pay_cash", "label": "交纳现金"},
-        {"key": "adjustment", "label": "个人其他调整"},
-        {"key": "net_total", "label": "实发合计（元）"}
+      {
+        "key": "report_name",
+        "label": "报表名称"
+      },
+      {
+        "key": "unit_name",
+        "label": "甲方单位项目名称"
+      },
+      {
+        "key": "transfer_total",
+        "label": "转账合计（元）"
+      },
+      {
+        "key": "deduction_total",
+        "label": "扣款合计（五险一金、单位代理费）"
+      },
+      {
+        "key": "personal_tax",
+        "label": "个人所得税"
+      },
+      {
+        "key": "personal_debt",
+        "label": "个人欠款"
+      },
+      {
+        "key": "personal_proxy_fee",
+        "label": "个人承担代理费"
+      },
+      {
+        "key": "union_fee",
+        "label": "扣工会会费"
+      },
+      {
+        "key": "accident_insurance",
+        "label": "意外险（个人承担）"
+      },
+      {
+        "key": "pay_cash",
+        "label": "交纳现金"
+      },
+      {
+        "key": "adjustment",
+        "label": "个人其他调整"
+      },
+      {
+        "key": "net_total",
+        "label": "实发合计（元）"
+      }
     ]
   },
   "ui": {
@@ -114,24 +224,76 @@
   "feishu_form": {
     "approval_code_env": "FEISHU_APPROVAL_CODE",
     "controls": {
-      "title": {"feishu_type": "input", "control_name_hint": "标题", "feishu_id": "widget17811628753290001"},
-      "attachments": {"feishu_type": "attachmentV2", "control_name_hint": "附件", "feishu_id": "widget16496686388470001"},
-      "table": {"feishu_type": "fieldList", "control_name_hint": "薪酬发放明细", "feishu_id": "widget16496685286700001"},
-      "remark": {"feishu_type": "textarea", "control_name_hint": "备注", "feishu_id": "widget17811635300840001"}
+      "title": {
+        "feishu_type": "input",
+        "control_name_hint": "标题",
+        "feishu_id": "widget17811628753290001"
+      },
+      "attachments": {
+        "feishu_type": "attachmentV2",
+        "control_name_hint": "附件",
+        "feishu_id": "widget16496686388470001"
+      },
+      "table": {
+        "feishu_type": "fieldList",
+        "control_name_hint": "薪酬发放明细",
+        "feishu_id": "widget16496685286700001"
+      },
+      "remark": {
+        "feishu_type": "textarea",
+        "control_name_hint": "备注",
+        "feishu_id": "widget17811635300840001"
+      }
     },
     "table_sub_controls": {
-      "report_name": {"feishu_type": "input", "feishu_id": "widget17811629865160001"},
-      "unit_name": {"feishu_type": "input", "feishu_id": "widget17811630160530001"},
-      "transfer_total": {"feishu_type": "amount", "feishu_id": "widget16496685800140001"},
-      "deduction_total": {"feishu_type": "amount", "feishu_id": "widget17811632175290001"},
-      "personal_tax": {"feishu_type": "amount", "feishu_id": "widget17811632599910001"},
-      "personal_debt": {"feishu_type": "amount", "feishu_id": "widget17811632838960001"},
-      "pay_cash": {"feishu_type": "amount", "feishu_id": "widget17816837666160001"},
-      "personal_proxy_fee": {"feishu_type": "amount", "feishu_id": "widget17811633075360001"},
-      "union_fee": {"feishu_type": "amount", "feishu_id": "widget17811633663510001"},
-      "accident_insurance": {"feishu_type": "amount", "feishu_id": ""},
-      "adjustment": {"feishu_type": "amount", "feishu_id": "widget17811633849100001"},
-      "net_total": {"feishu_type": "amount", "feishu_id": "widget17811634196160001"}
+      "report_name": {
+        "feishu_type": "input",
+        "feishu_id": "widget17811629865160001"
+      },
+      "unit_name": {
+        "feishu_type": "input",
+        "feishu_id": "widget17811630160530001"
+      },
+      "transfer_total": {
+        "feishu_type": "amount",
+        "feishu_id": "widget16496685800140001"
+      },
+      "deduction_total": {
+        "feishu_type": "amount",
+        "feishu_id": "widget17811632175290001"
+      },
+      "personal_tax": {
+        "feishu_type": "amount",
+        "feishu_id": "widget17811632599910001"
+      },
+      "personal_debt": {
+        "feishu_type": "amount",
+        "feishu_id": "widget17811632838960001"
+      },
+      "pay_cash": {
+        "feishu_type": "amount",
+        "feishu_id": "widget17816837666160001"
+      },
+      "personal_proxy_fee": {
+        "feishu_type": "amount",
+        "feishu_id": "widget17811633075360001"
+      },
+      "union_fee": {
+        "feishu_type": "amount",
+        "feishu_id": "widget17811633663510001"
+      },
+      "accident_insurance": {
+        "feishu_type": "amount",
+        "feishu_id": "widget17823660953770001"
+      },
+      "adjustment": {
+        "feishu_type": "amount",
+        "feishu_id": "widget17811633849100001"
+      },
+      "net_total": {
+        "feishu_type": "amount",
+        "feishu_id": "widget17811634196160001"
+      }
     }
   }
 }
