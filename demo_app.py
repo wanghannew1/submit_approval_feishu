@@ -1172,6 +1172,7 @@ def append_validation_sheet(file_bytes, validation_result,
 def build_summary_workbook(parsed_list, validation_results, tf_columns,
                            write_back_sheet_name="验证结果",
                            signature_results=None,
+                           signer_fields_results=None,
                            required_signatures=None):
     """
     生成「工资发放汇总表」xlsx，包含两个 sheet：
@@ -1236,6 +1237,7 @@ def build_summary_workbook(parsed_list, validation_results, tf_columns,
         # 验证结果列
         vr = validation_results.get(p.get("filename"))
         sr = (signature_results or {}).get(p.get("filename"))
+        sfr = (signer_fields_results or {}).get(p.get("filename"))
         status_parts = []
         fill = None
 
@@ -1246,6 +1248,10 @@ def build_summary_workbook(parsed_list, validation_results, tf_columns,
                 missing = "、".join(sr["missing"])
                 status_parts.append(f"❌ 缺少签名栏: {missing}")
                 fill = fail_fill
+
+        if sfr is not None and not sfr["ok"]:
+            status_parts.append(f"❌ 签名栏「{sfr['empty_fields'][0]}」未填写姓名")
+            fill = fail_fill
 
         if vr is None:
             if not status_parts:
@@ -1262,7 +1268,7 @@ def build_summary_workbook(parsed_list, validation_results, tf_columns,
             status_parts.append(f"⚠️ {vr['failed_count']} 项未通过 (共 {vr['passed_count']+vr['failed_count']} 项)")
             fill = fail_fill
             status = " | ".join(status_parts)
-        if not status_parts and vr is None and sr is None:
+        if not status_parts and vr is None and sr is None and sfr is None:
             status = "未启用"
         status_cell = ws.cell(row=i, column=len(headers), value=status)
         if fill is not None:
@@ -1562,6 +1568,7 @@ def main():
                 )
 
     # 签名栏字段值非空检查（如制表人必须填写姓名）
+    signer_fields_results = {}  # filename → {"ok": bool, "empty_fields": [...]}
     required_signer_fields = val_cfg.get("required_signer_fields", []) or []
     if required_signer_fields:
         for idx, upfile in enumerate(uploaded_files):
@@ -1569,6 +1576,7 @@ def main():
             upfile.seek(0)
             norm_name = rename_map.get(idx, upfile.name)
             sr_result = check_signer_fields(file_bytes, required_signer_fields)
+            signer_fields_results[norm_name] = sr_result
             if not sr_result["ok"]:
                 signature_check_blocked = True
                 st.error(
@@ -1606,6 +1614,10 @@ def main():
                 sig_parts.append("✅ 签名栏齐全")
             else:
                 sig_parts.append(f"❌ 缺少签名栏: {'、'.join(sr['missing'])}")
+
+        sfr = signer_fields_results.get(p["filename"])
+        if sfr is not None and not sfr["ok"]:
+            sig_parts.append(f"❌ 签名栏「{sfr['empty_fields'][0]}」未填写姓名")
 
         if val_cfg.get("enabled"):
             vr = validation_results.get(p["filename"])
@@ -1662,6 +1674,7 @@ def main():
             tf_columns,
             write_back_sheet_name=val_cfg.get("write_back_sheet_name", "验证结果"),
             signature_results=signature_results,
+            signer_fields_results=signer_fields_results,
             required_signatures=required_sigs,
         )
         st.download_button(
