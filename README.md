@@ -58,31 +58,31 @@ streamlit run demo_app.py
 创建服务文件：
 
 ```bash
-sudo nano /etc/systemd/system/streamlit-payroll.service
+sudo nano /etc/systemd/system/submit_approval_feishu.service
 ```
 
 写入以下内容（注意替换路径）：
 
 ```ini
 [Unit]
-Description=Streamlit Payroll2Feishu App
+Description=Streamlit submit_approval_feishu
 After=network.target
 
 [Service]
 Type=simple
 User=vod
-WorkingDirectory=/home/vod/code/Payroll2DingTalk
+WorkingDirectory=/home/vod/code/feishu/submit_approval_feishu
 
-# 使用虚拟环境的绝对路径
-ExecStart=/home/vod/code/Payroll2DingTalk/.venv/bin/streamlit run /home/vod/code/Payroll2DingTalk/demo_app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+# 使用虚拟环境的绝对路径（应用端口 8501）
+ExecStart=/home/vod/code/feishu/submit_approval_feishu/.venv/bin/streamlit run /home/vod/code/feishu/submit_approval_feishu
 
 # 自动重启配置
 Restart=always
 RestartSec=10
 
-# 日志输出
-StandardOutput=append:/home/vod/code/Payroll2DingTalk/streamlit.log
-StandardError=append:/home/vod/code/Payroll2DingTalk/streamlit-error.log
+# 日志交给 systemd journal 管理（自带轮转压缩；不写即默认 journal，以下两行可省略）
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -92,24 +92,27 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable streamlit-payroll
-sudo systemctl start streamlit-payroll
+sudo systemctl enable submit_approval_feishu
+sudo systemctl start submit_approval_feishu
 
 # 查看状态
-sudo systemctl status streamlit-payroll
+sudo systemctl status submit_approval_feishu
 ```
 
 **常用命令：**
 
 ```bash
-# 查看日志
-sudo tail -f /home/vod/code/Payroll2DingTalk/streamlit.log
+# 实时查看日志（journald 自带轮转压缩，无需手动管理日志文件）
+sudo journalctl -u submit_approval_feishu -f
+
+# 查看最近 100 行
+sudo journalctl -u submit_approval_feishu -n 100
 
 # 重启服务
-sudo systemctl restart streamlit-payroll
+sudo systemctl restart submit_approval_feishu
 
 # 停止服务
-sudo systemctl stop streamlit-payroll
+sudo systemctl stop submit_approval_feishu
 ```
 
 ## 环境配置
@@ -199,26 +202,45 @@ server {
 }
 ```
 
-### 日志轮转
+### 日志管理（journald）
 
-避免日志文件无限增长：
+服务日志由 systemd journal 统一管理，**自带轮转压缩，无需配置 logrotate**，避免日志文件无限增长导致磁盘占满、系统卡顿。
+
+**1. 确认 journald 持久化并限制大小**
 
 ```bash
-sudo nano /etc/logrotate.d/streamlit-payroll
+sudo mkdir -p /var/log/journal
+sudo nano /etc/systemd/journald.conf
 ```
 
-写入：
+写入（或取消注释）：
 
+```ini
+Storage=persistent
+SystemMaxUse=200M
+SystemMaxFileSize=20M
+MaxRetentionSec=30day
 ```
-/home/vod/code/Payroll2DingTalk/*.log {
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0644 vod vod
-}
+
+重启 journald 生效：
+
+```bash
+sudo systemctl restart systemd-journald
+```
+
+**2. 查看日志**
+
+```bash
+sudo journalctl -u submit_approval_feishu -f      # 实时
+sudo journalctl -u submit_approval_feishu -n 100  # 最近 100 行
+sudo journalctl -u submit_approval_feishu --since "2 hours ago"
+```
+
+> **注意**：如果是从旧版（`StandardOutput=append:...` 直接写文件）升级而来，切换后旧的巨大日志文件仍占磁盘，需手动清理：
+
+```bash
+sudo truncate -s 0 /home/vod/code/feishu/submit_approval_feishu/log/streamlit.log
+sudo truncate -s 0 /home/vod/code/feishu/submit_approval_feishu/log/streamlit-error.log
 ```
 
 ## 配置文件（可选）
@@ -517,7 +539,7 @@ sudo nano /etc/logrotate.d/streamlit-payroll
 **服务启动失败**
 
 1. 检查 `.env` 文件权限：`ls -la .env`
-2. 检查日志：`sudo tail -f /home/vod/code/Payroll2DingTalk/streamlit-error.log`
+2. 检查日志：`sudo journalctl -u submit_approval_feishu -n 50`
 3. 确认虚拟环境路径正确：`which streamlit` 应显示 `.venv/bin/streamlit`
 
 ## 已验证的 API 链路
