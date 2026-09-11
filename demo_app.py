@@ -562,6 +562,10 @@ def parse_excel(file_bytes, filename):
             "summary_row": None,
             "data_rows": [],
             "all_header_texts": set(),
+            # 根因标记：未找到合计行时 column_indices/all_header_texts 为空属连锁反应，
+            # 下游不得据此报「未找到关键列/缺少必需列头」，应提示合计行缺失。
+            "no_summary_row": True,
+            "summary_marker": summary_marker,
         }
         # 兜底也要把 excel.columns 里所有列填上 "0.00"，避免下游 KeyError
         for col_key in excel_cfg.get("columns", {}):
@@ -728,6 +732,8 @@ def parse_excel(file_bytes, filename):
         "summary_row": summary_row,
         "data_rows": data_rows,
         "all_header_texts": all_header_texts,
+        "no_summary_row": False,
+        "summary_marker": summary_marker,
         "_cfg_cols": {
             "header_start_row": excel_cfg.get("header_start_row", default_excel["header_start_row"]),
             "header_row_count": excel_cfg.get("header_row_count", default_excel["header_row_count"]),
@@ -912,38 +918,50 @@ def validate_payroll(parsed, validation_cfg, excel_cols):
     critical_cols = ["transfer_total", "deduction_total", "net_total"]
     col_labels_map = {k: col_label(k) for k in critical_cols}
 
-    missing_cols = [col_labels_map[k] for k in critical_cols if column_indices.get(k, -1) < 0]
-    if missing_cols:
+    # 根因优先：合计行缺失（parse_excel 兜底返回）时 column_indices 全为 -1，
+    # 若据此报「未找到关键列/表头行配置错误」会把用户引向错误方向，必须先报合计行缺失。
+    if parsed.get("no_summary_row"):
         passed = False
+        marker_text = parsed.get("summary_marker") or "合计"
         detail = (
-            f"未在表头中找到以下关键列：{'、'.join(missing_cols)}。"
-            f"请确认工资表表头起始行为第 {hdr_start} 行，第 {hdr_start}–{hdr_end} 行为组合表头（当前配置）。"
+            f"未找到合计行：工资表中没有首列为「{marker_text}」的汇总行。"
+            f"请确认最后一行明细数据之后、签字行之前存在合计行，"
+            f"且合计行首列单元格内容为「{marker_text}」；"
+            f"若文件确实缺少合计行，请联系管理员调整配置。"
         )
     else:
-        # 列都找到了，检查合计行和数据行是否有实际数值
-        has_real_data = False
-        for k in critical_cols:
-            idx = column_indices.get(k, -1)
-            if idx >= 0 and summary_row and idx < len(summary_row):
-                v = summary_row[idx]
-                if v is not None:
-                    try:
-                        if float(v) != 0.0:
-                            has_real_data = True
-                            break
-                    except (ValueError, TypeError):
-                        pass
-        if not has_real_data and data_rows:
+        missing_cols = [col_labels_map[k] for k in critical_cols if column_indices.get(k, -1) < 0]
+        if missing_cols:
             passed = False
-            # 用 config 的实际值提示
             detail = (
-                f"识别到的转账合计、扣款合计、实发合计均为 0，但存在 {len(data_rows)} 行明细数据。"
-                f"可能是表格格式有误，请确认工资表表头起始行为第 {hdr_start} 行、"
-                f"第 {hdr_start}–{hdr_end} 行为组合表头。如文件格式不同，请联系管理员调整配置。"
+                f"未在表头中找到以下关键列：{'、'.join(missing_cols)}。"
+                f"请确认工资表表头起始行为第 {hdr_start} 行，第 {hdr_start}–{hdr_end} 行为组合表头（当前配置）。"
             )
         else:
-            passed = True
-            detail = ""
+            # 列都找到了，检查合计行和数据行是否有实际数值
+            has_real_data = False
+            for k in critical_cols:
+                idx = column_indices.get(k, -1)
+                if idx >= 0 and summary_row and idx < len(summary_row):
+                    v = summary_row[idx]
+                    if v is not None:
+                        try:
+                            if float(v) != 0.0:
+                                has_real_data = True
+                                break
+                        except (ValueError, TypeError):
+                            pass
+            if not has_real_data and data_rows:
+                passed = False
+                # 用 config 的实际值提示
+                detail = (
+                    f"识别到的转账合计、扣款合计、实发合计均为 0，但存在 {len(data_rows)} 行明细数据。"
+                    f"可能是表格格式有误，请确认工资表表头起始行为第 {hdr_start} 行、"
+                    f"第 {hdr_start}–{hdr_end} 行为组合表头。如文件格式不同，请联系管理员调整配置。"
+                )
+            else:
+                passed = True
+                detail = ""
 
     checks.append({
         "kind": "table_format",
@@ -955,25 +973,35 @@ def validate_payroll(parsed, validation_cfg, excel_cols):
     # === E. 必需列头检查：工资表必须包含这些列 ===
     required_headers = validation_cfg.get("required_headers", []) or []
     all_texts = parsed.get("all_header_texts", set())
-    missing_required = []
-    for rh in required_headers:
-        found = any(rh in t for t in all_texts)
-        if not found:
-            missing_required.append(rh)
-    if missing_required:
-        checks.append({
-            "kind": "required_headers",
-            "name": "必需列检查",
-            "passed": False,
-            "detail": f"缺少必需列头：{'、'.join(missing_required)}",
-        })
-    else:
+    if parsed.get("no_summary_row"):
+        # 合计行缺失时 all_header_texts 为空集合，此项必然失败但属于连锁反应，
+        # 主因已由 D 项「未找到合计行」说明，此处跳过以免重复误导。
         checks.append({
             "kind": "required_headers",
             "name": "必需列检查",
             "passed": True,
             "detail": "",
         })
+    else:
+        missing_required = []
+        for rh in required_headers:
+            found = any(rh in t for t in all_texts)
+            if not found:
+                missing_required.append(rh)
+        if missing_required:
+            checks.append({
+                "kind": "required_headers",
+                "name": "必需列检查",
+                "passed": False,
+                "detail": f"缺少必需列头：{'、'.join(missing_required)}",
+            })
+        else:
+            checks.append({
+                "kind": "required_headers",
+                "name": "必需列检查",
+                "passed": True,
+                "detail": "",
+            })
 
     passed_count = sum(1 for c in checks if c["passed"])
     failed_count = len(checks) - passed_count
@@ -1732,11 +1760,19 @@ def main():
         net = p.get("net_total", "0.00")
         if trans in ("0.00", "0", "", None) and net in ("0.00", "0", "", None):
             zero_amount_blocked = True
-            st.error(
-                f"⚠️ {p['filename']}：识别到的转账合计和实发合计均为 0，"
-                f"可能是表格格式有误。请确认工资表表头起始行为第 {hdr_s} 行、"
-                f"第 {hdr_s}–{hdr_e} 行为组合表头。如文件格式不同，请联系管理员调整配置。"
-            )
+            if p.get("no_summary_row"):
+                marker_text = p.get("summary_marker") or "合计"
+                st.error(
+                    f"⚠️ {p['filename']}：未找到合计行——文件中未检测到首列为「{marker_text}」的汇总行，"
+                    f"因此无法读取转账合计、实发合计。请确认最后一行明细数据之后、签字行之前存在合计行，"
+                    f"且合计行首列单元格内容为「{marker_text}」；若文件确实缺少合计行，请联系管理员调整配置。"
+                )
+            else:
+                st.error(
+                    f"⚠️ {p['filename']}：识别到的转账合计和实发合计均为 0，"
+                    f"可能是表格格式有误。请确认工资表表头起始行为第 {hdr_s} 行、"
+                    f"第 {hdr_s}–{hdr_e} 行为组合表头。如文件格式不同，请联系管理员调整配置。"
+                )
 
     duplicate_blocked = False
     for i in range(len(parsed_list)):
