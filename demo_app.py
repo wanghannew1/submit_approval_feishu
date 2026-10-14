@@ -83,6 +83,7 @@ DEFAULT_CONFIG = {
             },
             "personal_tax": {
                 "keywords": ["个税", "个人所得税"],
+                "merge_keywords": ["个人所得税(年终奖)", "个人所得税（年终奖）"],
                 "label": "个人所得税"
             },
             "adjustment": {
@@ -665,6 +666,54 @@ def parse_excel(file_bytes, filename):
         if all(c is None or (isinstance(c, str) and not c.strip()) for c in r):
             continue
         data_rows.append(r)
+
+    # --- 列合并：merge_keywords 命中的列数值并入该 key 主列（如 个人所得税(年终奖) -> 个人所得税） ---
+    def _all_idx(match_fn):
+        out = []
+        for hrow in list(header_rows) + list(fallback_rows or []):
+            for cidx, cell in enumerate(hrow or []):
+                t = str(cell).strip() if cell is not None else ""
+                if t and match_fn(t) and cidx not in out:
+                    out.append(cidx)
+        return out
+
+    for col_key, col_def in excel_cols.items():
+        merge_kws = col_def.get("merge_keywords") or []
+        if not merge_kws:
+            continue
+        merge_idx = _all_idx(lambda t: any(k in t for k in merge_kws))
+        if not merge_idx:
+            continue
+        main_idx = column_indices.get(col_key, -1)
+        if main_idx in merge_idx:
+            # 主列被子串匹配误绑到合并列（合并列在左侧）-> 重绑到不含合并关键词的主列
+            main_idx = next((i for i in _all_idx(
+                lambda t: any(k in t for k in col_def.get("keywords", []))
+                and not any(k in t for k in merge_kws)
+            )), -1)
+            if main_idx >= 0:
+                column_indices[col_key] = main_idx
+        if main_idx < 0:
+            # 只有合并列没有主列 -> 直接当主列用，不再自加
+            column_indices[col_key] = merge_idx[0]
+            continue
+        extras = [i for i in merge_idx if i != main_idx]
+        if not extras:
+            continue
+
+        def _merge_row(row, _m=main_idx, _e=extras):
+            if row is None or _m >= len(row):
+                return row
+            r = list(row)  # xls 行是 list、xlsx 是 tuple，统一转 list
+            total = _to_money(r[_m])
+            for i in _e:
+                if i < len(r):
+                    total += _to_money(r[i])
+            r[_m] = round(total, 2)
+            return r
+
+        summary_row = _merge_row(summary_row)
+        data_rows = [_merge_row(r) for r in data_rows]
 
     def _sum_data_rows(col_key):
         """从数据行汇总某列的总和，供合计行缺失时兜底"""
